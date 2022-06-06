@@ -1,27 +1,11 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-from torch.utils.data import Dataset, DataLoader, TensorDataset
-import torchvision
-import numpy as np
+from torch.utils.data import Dataset, DataLoader
 import time
-
-import os
-
-from xgboost import train
-os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
+import gc
+import numpy as np
 
 import matplotlib.pyplot as plt
-
-def sample_from_data(dataset, sample_size = 4, show_gray = False):
-    """Function to sample from dataset
-
-    Args:
-        dataset (_type_): _description_
-        sample_size (int, optional): _description_. Defaults to 4.
-        show_gray (bool, optional): _description_. Defaults to False.
-    """
-    pass
 
 def modelSummary(model, verbose=False):
     if verbose:
@@ -56,8 +40,6 @@ def train_epoch(model: nn.Module, device: torch.device, train_dataloader: DataLo
     Returns:
         run_results (dict): Dictionary of metrics computed for the epoch
     """
-    BATCH_SIZE = training_params["batch_size"]
-    LOSS_FUNCTION = training_params["loss_function"]
     OPTIMIZER = training_params["optimizer"]
     
     model = model.to(device)
@@ -97,6 +79,8 @@ def train_epoch(model: nn.Module, device: torch.device, train_dataloader: DataLo
         del loss
         del input
         del output
+        del x 
+        del target
         
     for key in run_results:
         run_results[key] /= num_batches
@@ -118,8 +102,6 @@ def evaluate_epoch(model: nn.Module, device: torch.device, validation_dataloader
     Returns:
         run_results (dict): Dictionary of metrics computed for the epoch
     """
-    LOSS_FUNCTION = training_params["loss_function"]
-    
     model = model.to(device)
     
     # Dictionary holding result of this epoch
@@ -136,8 +118,11 @@ def evaluate_epoch(model: nn.Module, device: torch.device, validation_dataloader
         for x, target in validation_dataloader:
             num_batches += 1
             
+            
+            
             # Move tensors to device
             input = x.to(device)
+            target = target.to(device)
             
             # Forward pass
             output = model(input)
@@ -154,6 +139,8 @@ def evaluate_epoch(model: nn.Module, device: torch.device, validation_dataloader
             del loss
             del input
             del output
+            del x 
+            del target
                 
     for key in run_results:
         run_results[key] /= num_batches
@@ -180,12 +167,13 @@ def train_evaluate(model: nn.Module, device: torch.device, train_dataset: Datase
     SAVE_PATH = training_params["save_path"]
     SAMPLE_SIZE = training_params["sample_size"]
     PLOT_EVERY = training_params["plot_every"]
+    LATENT_DIMS = training_params["latent_dims"]
     
     # Initialize metrics
     train_results = dict()
-    train_results['loss'] = []
+    train_results['loss'] = np.empty(1)
     evaluation_results = dict()
-    evaluation_results['loss'] = []
+    evaluation_results['loss'] = np.empty(1)
     
     for metric in metrics:
         train_results[metric] = []
@@ -195,7 +183,18 @@ def train_evaluate(model: nn.Module, device: torch.device, train_dataset: Datase
     train_dataloader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
     validation_dataloader = DataLoader(validation_dataset, batch_size=BATCH_SIZE, shuffle=True)
     
-    FIXED_SAMPLES = next(iter(validation_dataloader))
+    batch = next(iter(validation_dataloader))
+    idxs = []
+    for i in range(SAMPLE_SIZE):
+        idx = torch.where(batch[1] == i)[0].squeeze()[0]
+        idxs.append(idx.item())
+    
+    FIXED_SAMPLES = batch[0][idxs].to(device)
+   
+    FIXED_NOISE = torch.normal(0, 1, size = (100, LATENT_DIMS)).to(device)
+    
+    del idxs
+    del batch
     
     for epoch in range(NUM_EPOCHS):
         start = time.time()
@@ -212,30 +211,54 @@ def train_evaluate(model: nn.Module, device: torch.device, train_dataset: Datase
         epoch_evaluation_results = evaluate_epoch(model, device, validation_dataloader, training_params, metrics)
         
         for metric in metrics:
-            train_results[metric].append(epoch_train_results[metric])
-            evaluation_results[metric].append(epoch_evaluation_results[metric])
+            np.append(train_results[metric], epoch_train_results[metric])
+            np.append(evaluation_results[metric], epoch_evaluation_results[metric])
             
         
         # Print results of epoch
         print(f"Completed Epoch {epoch+1}/{NUM_EPOCHS} in {(time.time() - start):.2f}s")
-        print(f"Train Loss: {epoch_train_results['loss']:.4f} \t Validation Loss: {epoch_evaluation_results['loss']:.4f}")
+        print(f"Train Loss: {epoch_train_results['loss']:.2f} \t Validation Loss: {epoch_evaluation_results['loss']:.2f}")
         
         # Plot results
         if epoch % PLOT_EVERY == 0:
             
             model.eval()
-            ouputs = model(FIXED_SAMPLES[0].to(device)).detach().cpu()
+            
+            outputs = model(FIXED_SAMPLES).detach().cpu()
+            generated_images = model.decoder(FIXED_NOISE).detach().cpu()
             
             fig, ax = plt.subplots(2, SAMPLE_SIZE, figsize=(SAMPLE_SIZE * 5,15))
             for i in range(SAMPLE_SIZE):
-                image = FIXED_SAMPLES[0][i].detach().cpu()
-                output = ouputs[i]
+                image = FIXED_SAMPLES[i].detach().cpu()
+                output = outputs[i]
                 
                 ax[0][i].imshow(image.reshape(28,28))
                 ax[1][i].imshow(output.reshape(28,28))
             
-            plt.savefig(f"{SAVE_PATH}_epoch{epoch + 1}.png")
+            plt.savefig(f"{SAVE_PATH}/training_images/epoch{epoch + 1}.png")
             plt.close()
+            
+            del fig, ax
+            del outputs
+            
+            _, axs = plt.subplots(10, 10, figsize=(30, 20))
+            axs = axs.flatten()
+            
+            for img, ax in zip(generated_images, axs):
+                ax.imshow(img.reshape(28, 28))
+                ax.axis('off')
+                
+            
+            
+            plt.savefig(f"{SAVE_PATH}/generated_images/epoch{epoch + 1}.png")
+            plt.close()
+            
+            # Clean up memory
+            del generated_images
+            del img
+            del _, axs
+        
+        gc.collect()
     
     
     # Save model
@@ -261,58 +284,6 @@ def plot_training_results(train_results, validation_results, training_params, me
     plt.ylabel("Loss")
     plt.savefig(f"{training_params['save_path']}_training_results.png")
     plt.show()
-    
-    
-class BasicNet(nn.Module):
-    def __init__(self, input_size, hidden_size, output_size):
-        super(BasicNet,self).__init__()
-        
-        self.linear1 = nn.Linear(input_size, hidden_size)
-        self.output = nn.Linear(hidden_size, output_size)
-        self.activation = nn.ReLU()
-
-    def forward(self, x):
-        x = self.linear1(x)
-        x = self.activation(x)
-        x = self.output(x)
-        return x
-    
+       
 if __name__ == '__main__':
-    input_size = 512
-    hidden_dimension = 5096
-    output_size = 16
-    
-    model = BasicNet(input_size, hidden_dimension, output_size)
-    
-    modelSummary(model)
-
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    print(f"Using device: {device}\n")
-    
-    training_data_size = 2**12
-    validation_data_size = int(training_data_size * 0.2)
-    
-    training_data = torch.rand(training_data_size, input_size)
-    training_target = torch.rand(training_data_size, output_size)
-    
-    validation_data = torch.rand(validation_data_size, input_size)
-    validation_target = torch.rand(validation_data_size, output_size)
-    
-    train_dataset = TensorDataset(training_data, training_target)
-    validation_dataset = TensorDataset(validation_data, validation_target)
-    
-    training_params = {
-        'num_epochs': 50,
-        'batch_size': 512,
-        'loss_function':F.mse_loss,
-        'optimizer': torch.optim.Adam(model.parameters(), lr=0.001),
-        'save_path': './model.pt'
-    }
-    
-    metrics = {
-        'l1': lambda output, target: torch.mean(torch.abs(output - target)),
-        'l1_norm': lambda output, target: torch.norm(output - target, 1),
-    }
-    
-    train_results, evaluation_results = train_evaluate(model, device, train_dataset, validation_dataset, training_params, metrics)
-    plot_training_results(train_results=train_results, validation_results=evaluation_results, training_params=training_params)
+    pass

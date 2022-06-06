@@ -2,6 +2,7 @@
 __pycache__/
 *.py[cod]
 *$py.class
+training_256/*
 
 # C extensions
 *.so

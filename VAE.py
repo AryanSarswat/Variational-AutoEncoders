@@ -1,11 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.utils.data import Dataset, DataLoader, TensorDataset
 import torchvision
-import numpy as np
-import time
-import matplotlib.pyplot as plt
 from utils import modelSummary, train_evaluate, plot_training_results
 
 
@@ -13,10 +9,10 @@ class Encoder(nn.Module):
     def __init__(self, latent_dims) -> None:
         super(Encoder, self).__init__()
         
-        self.conv1 = nn.Conv2d(1, 64, 3, stride = 2)
+        self.conv1 = nn.Conv2d(1, 64, 3, stride = 2, bias = False)
         self.batchnorm1 = nn.BatchNorm2d(64)
         
-        self.conv2 = nn.Conv2d(64, 128 , 3, stride = 2)
+        self.conv2 = nn.Conv2d(64, 128 , 3, stride = 2, bias = False)
         self.batchnorm2 = nn.BatchNorm2d(128)
         
         self.conv3 = nn.Conv2d(128, 128, 3, stride = 2) # (#num samples, 64 , 2 , 2)
@@ -60,10 +56,10 @@ class Decoder(nn.Module):
         self.linear1 = nn.Linear(latent_dims, 512)
         
         
-        self.deconv1 = nn.ConvTranspose2d(32, 128, 3, stride = 3, padding = 1, output_padding = 2)
+        self.deconv1 = nn.ConvTranspose2d(32, 128, 3, stride = 3, padding = 1, output_padding = 2, bias = False)
         self.batchnorm1 = nn.BatchNorm2d(128)
         
-        self.deconv2 = nn.ConvTranspose2d(128, 64, 3, stride = 2, output_padding = 1)
+        self.deconv2 = nn.ConvTranspose2d(128, 64, 3, stride = 2, output_padding = 1, bias = False)
         self.batchnorm2 = nn.BatchNorm2d(64)
         
         self.deconv3 = nn.ConvTranspose2d(64, 1, 3)
@@ -97,7 +93,8 @@ class VariationalAutoEncoder(nn.Module):
 if __name__ == '__main__':
     
     # Initialize Model
-    model = VariationalAutoEncoder(256)
+    latent_dims = 256
+    model = VariationalAutoEncoder(latent_dims)
     
     modelSummary(model)
     
@@ -110,13 +107,14 @@ if __name__ == '__main__':
     
         
     training_params = {
-        'num_epochs': 100,
+        'num_epochs': 200,
         'batch_size': 512,
         'loss_function':F.mse_loss,
-        'optimizer': torch.optim.Adam(model.parameters(), lr=0.001),
-        'save_path': 'training_256/model.pt',
+        'optimizer': torch.optim.Adam(model.parameters(), lr=1e-4),
+        'save_path': 'training_256',
         'sample_size': 10,
-        'plot_every': 1
+        'plot_every': 1,
+        'latent_dims' : latent_dims
     }
     
     metrics = {
