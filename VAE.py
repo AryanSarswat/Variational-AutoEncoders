@@ -26,8 +26,8 @@ class Encoder(nn.Module):
         self.sigma = nn.Linear(1024, latent_dims)
         
         self.N = torch.distributions.Normal(0, 1)
-        self.N.loc = self.N.loc
-        self.N.scale = self.N.scale
+        self.N.loc = self.N.loc.cuda()
+        self.N.scale = self.N.scale.cuda()
         
         self.kl = 0
         
