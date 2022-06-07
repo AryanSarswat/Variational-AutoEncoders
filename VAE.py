@@ -16,9 +16,9 @@ class Encoder(nn.Module):
         self.conv2 = nn.Conv2d(64, 128 , 3, stride = 2, bias = False)
         self.batchnorm2 = nn.BatchNorm2d(128)
         
-        self.conv3 = nn.Conv2d(128, 128, 3, stride = 2) # (#num samples, 64 , 2 , 2)
+        self.conv3 = nn.Conv2d(128, 128, 3, stride = 2) # (num samples, 64 , 2 , 2)
         
-        self.flatten = nn.Flatten(start_dim = 1) # (#num samples, 256)
+        self.flatten = nn.Flatten(start_dim = 1) # (num samples, 512)
         
         self.linear1 = nn.Linear(512, 1024)
         

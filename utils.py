@@ -153,88 +153,6 @@ def evaluate_epoch(model: nn.Module, device: torch.device, validation_dataloader
         
     return run_results
 
-def train_evaluate(model: nn.Module, device: torch.device, train_dataloader: DataLoader, validation_dataloader: DataLoader, training_params: dict, metrics: dict):
-    """Function to train a model and provide statistics during training
-
-    Args:
-        model (nn.Module): Model to be trained
-        device (torch.device): Device to be trained on
-        train_dataset (DataLoader): Dataset to be trained on
-        validation_dataset (DataLoader): Dataset to be evaluated on
-        training_params (dict): Dictionary of training parameters containing "num_epochs", "batch_size", "loss_function",
-                                                                             "save_path", "optimizer"
-        metrics (dict): Dictionary of functional methods that would compute the metric value
-
-    Returns:
-        _type_: _description_
-    """
-    NUM_EPOCHS = training_params["num_epochs"]
-    BATCH_SIZE = training_params["batch_size"]
-    SAVE_PATH = training_params["save_path"]
-    SAMPLE_SIZE = training_params["sample_size"]
-    PLOT_EVERY = training_params["plot_every"]
-    SAVE_EVERY = training_params["save_every"]
-    LATENT_DIMS = training_params["latent_dims"]
-    
-    # Initialize metrics
-    train_results = dict()
-    train_results['loss'] = np.empty(1)
-    evaluation_results = dict()
-    evaluation_results['loss'] = np.empty(1)
-    
-    for metric in metrics:
-        train_results[metric] = np.empty(1)
-        evaluation_results[metric] = np.empty(1)
-    
-    batch = next(iter(validation_dataloader))
-    idxs = []
-    for i in range(SAMPLE_SIZE):
-        idx = torch.where(batch[1] == i)[0].squeeze()[0]
-        idxs.append(idx.item())
-    
-    FIXED_SAMPLES = batch[0][idxs].to(device).detach()
-   
-    FIXED_NOISE = torch.normal(0, 1, size = (100, LATENT_DIMS), device=device).detach()
-    
-    del idxs
-    del batch
-    
-    for epoch in range(NUM_EPOCHS):
-        start = time.time()
-        
-        print(f"======== Epoch {epoch+1}/{NUM_EPOCHS} ========")
-
-        # Train Model
-        print("Training ... ")
-        epoch_train_results = train_epoch(model, device, train_dataloader, training_params, metrics)
-        
-
-        # Evaluate Model
-        print("Evaluating ... ")
-        epoch_evaluation_results = evaluate_epoch(model, device, validation_dataloader, training_params, metrics)
-        
-        for metric in metrics:
-            np.append(train_results[metric], epoch_train_results[metric])
-            np.append(evaluation_results[metric], epoch_evaluation_results[metric])
-            
-        
-        # Print results of epoch
-        print(f"Completed Epoch {epoch+1}/{NUM_EPOCHS} in {(time.time() - start):.2f}s")
-        print(f"Train Loss: {epoch_train_results['loss']:.2f} \t Validation Loss: {epoch_evaluation_results['loss']:.2f}")
-        
-        # Plot results
-        if epoch % PLOT_EVERY == 0:
-            save_plots(FIXED_SAMPLES, FIXED_NOISE, model, epoch, training_params)
-        
-        print(f"Items cleaned up: {gc.collect()}")
-    
-        # Save model
-        if epoch % SAVE_EVERY == 0 and epoch != 0:
-            SAVE = f"{SAVE_PATH}_epoch{epoch + 1}.pt"
-            torch.save(model.state_dict(), SAVE)
-           
-    return train_results, evaluation_results
-
 def save_plots(fixed_samples, fixed_noise, model, device, epoch, training_params):
     """Function to save plots of the model
 
@@ -269,6 +187,7 @@ def save_plots(fixed_samples, fixed_noise, model, device, epoch, training_params
         plt.savefig(f"{SAVE_PATH}/training_images/epoch{epoch + 1}.png")
         plt.close()
         
+        # Clean up memory
         del fig, ax
         del output
         del outputs
@@ -287,6 +206,89 @@ def save_plots(fixed_samples, fixed_noise, model, device, epoch, training_params
         del generated_images
         del image
         del _, axs
+
+def train_evaluate(model: nn.Module, device: torch.device, train_dataloader: DataLoader, validation_dataloader: DataLoader, training_params: dict, metrics: dict):
+    """Function to train a model and provide statistics during training
+
+    Args:
+        model (nn.Module): Model to be trained
+        device (torch.device): Device to be trained on
+        train_dataset (DataLoader): Dataset to be trained on
+        validation_dataset (DataLoader): Dataset to be evaluated on
+        training_params (dict): Dictionary of training parameters containing "num_epochs", "batch_size", "loss_function",
+                                                                             "save_path", "optimizer"
+        metrics (dict): Dictionary of functional methods that would compute the metric value
+
+    Returns:
+        _type_: _description_
+    """
+    NUM_EPOCHS = training_params["num_epochs"]
+    SAVE_PATH = training_params["save_path"]
+    SAMPLE_SIZE = training_params["sample_size"]
+    PLOT_EVERY = training_params["plot_every"]
+    SAVE_EVERY = training_params["save_every"]
+    LATENT_DIMS = training_params["latent_dims"]
+    
+    # Initialize metrics
+    train_results = dict()
+    train_results['loss'] = np.empty(1)
+    evaluation_results = dict()
+    evaluation_results['loss'] = np.empty(1)
+    
+    for metric in metrics:
+        train_results[metric] = np.empty(1)
+        evaluation_results[metric] = np.empty(1)
+    
+    batch = next(iter(validation_dataloader))
+    idxs = []
+    for i in range(SAMPLE_SIZE):
+        idx = torch.where(batch[1] == i)[0].squeeze()[0]
+        idxs.append(idx.item())
+    
+    FIXED_SAMPLES = batch[0][idxs].to(device).detach()
+   
+    FIXED_NOISE = torch.normal(0, 1, size = (100, LATENT_DIMS), device=device).detach()
+    
+    # Clean up
+    del idxs
+    del batch
+    
+    for epoch in range(NUM_EPOCHS):
+        start = time.time()
+        
+        print(f"=========== Epoch {epoch+1}/{NUM_EPOCHS} ===========")
+
+        # Train Model
+        print("Training ... ")
+        epoch_train_results = train_epoch(model, device, train_dataloader, training_params, metrics)
+        
+
+        # Evaluate Model
+        print("Evaluating ... ")
+        epoch_evaluation_results = evaluate_epoch(model, device, validation_dataloader, training_params, metrics)
+        
+        for metric in metrics:
+            np.append(train_results[metric], epoch_train_results[metric])
+            np.append(evaluation_results[metric], epoch_evaluation_results[metric])
+            
+        
+        # Print results of epoch
+        print(f"Completed Epoch {epoch+1}/{NUM_EPOCHS} in {(time.time() - start):.2f}s")
+        print(f"Train Loss: {epoch_train_results['loss']:.2f} \t Validation Loss: {epoch_evaluation_results['loss']:.2f}")
+        
+        # Plot results
+        if epoch % PLOT_EVERY == 0:
+            save_plots(FIXED_SAMPLES, FIXED_NOISE, model, epoch, training_params)
+        
+        print(f"Items cleaned up: {gc.collect()}")
+    
+        # Save model
+        if epoch % SAVE_EVERY == 0 and epoch != 0:
+            SAVE = f"{SAVE_PATH}_epoch{epoch + 1}.pt"
+            torch.save(model.state_dict(), SAVE)
+           
+    return train_results, evaluation_results
+
 
 def plot_training_results(train_results, validation_results, training_params, metrics):
     """Function to plot training results
