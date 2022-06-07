@@ -111,6 +111,7 @@ if __name__ == '__main__':
         'save_path': 'training_256',
         'sample_size': 10,
         'plot_every': 1,
+        'save_every': 100,
         'latent_dims' : latent_dims
     }
 

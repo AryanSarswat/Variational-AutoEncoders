@@ -4,7 +4,7 @@ from torch.utils.data import DataLoader
 import time
 import gc
 import numpy as np
-
+from tqdm import tqdm
 import matplotlib.pyplot as plt
 
 def modelSummary(model, verbose=False):
@@ -59,7 +59,7 @@ def train_epoch(model: nn.Module, device: torch.device, train_dataloader: DataLo
     
     # Iterate over batches
     num_batches = 0
-    for x, target in train_dataloader:
+    for x, target in tqdm(train_dataloader, desc="Training"):
         num_batches += 1
 
         # Move tensors to device
@@ -121,7 +121,7 @@ def evaluate_epoch(model: nn.Module, device: torch.device, validation_dataloader
         model.eval()
         num_batches = 0
         
-        for x, target in validation_dataloader:
+        for x, target in tqdm(validation_dataloader, desc= 'Validation'):
             num_batches += 1
             
             
@@ -259,12 +259,10 @@ def train_evaluate(model: nn.Module, device: torch.device, train_dataloader: Dat
         print(f"=========== Epoch {epoch+1}/{NUM_EPOCHS} ===========")
 
         # Train Model
-        print("Training ... ")
         epoch_train_results = train_epoch(model, device, train_dataloader, training_params, metrics)
         
 
         # Evaluate Model
-        print("Evaluating ... ")
         epoch_evaluation_results = evaluate_epoch(model, device, validation_dataloader, training_params, metrics)
         
         for metric in metrics:
@@ -278,7 +276,7 @@ def train_evaluate(model: nn.Module, device: torch.device, train_dataloader: Dat
         
         # Plot results
         if epoch % PLOT_EVERY == 0:
-            save_plots(FIXED_SAMPLES, FIXED_NOISE, model, epoch, training_params)
+            save_plots(FIXED_SAMPLES, FIXED_NOISE, model, device, epoch, training_params)
         
         print(f"Items cleaned up: {gc.collect()}")
     
