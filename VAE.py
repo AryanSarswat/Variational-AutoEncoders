@@ -1,3 +1,4 @@
+from genericpath import exists
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -93,7 +94,7 @@ class VariationalAutoEncoder(nn.Module):
 
 if __name__ == '__main__':
     
-    latent_dims = 256
+    latent_dims = 512
     learning_rate = 1e-4
     
     model = VariationalAutoEncoder(latent_dims)
@@ -116,12 +117,9 @@ if __name__ == '__main__':
     }
 
     # Create directory if it doesn't exist
-    try:
-        os.mkdir(training_params['save_path'])
-        os.mkdir(os.path.join(training_params['save_path'], 'training_images'))
-        os.mkdir(os.path.join(training_params['save_path'], 'generated_images'))
-    except FileExistsError:
-        pass
+    os.makedirs(training_params['save_path'], exist_ok=True)
+    os.makedirs(os.path.join(training_params['save_path'], 'training_images'), exist_ok=True)
+    os.makedirs(os.path.join(training_params['save_path'], 'generated_images'), exist_ok=True)
 
     # Load Data
     train_dataset = DataLoader(torchvision.datasets.MNIST(root = './data', train = True, 

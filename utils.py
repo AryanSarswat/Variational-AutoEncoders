@@ -6,6 +6,7 @@ import gc
 import numpy as np
 from tqdm import tqdm
 import matplotlib.pyplot as plt
+import psutil
 
 def modelSummary(model, verbose=False):
     """Method provides a description of a model and its parameters
@@ -259,27 +260,39 @@ def train_evaluate(model: nn.Module, device: torch.device, train_dataloader: Dat
         print(f"=========== Epoch {epoch+1}/{NUM_EPOCHS} ===========")
 
         # Train Model
+        diff_train = psutil.virtual_memory().percent
         epoch_train_results = train_epoch(model, device, train_dataloader, training_params, metrics)
-        
+        diff_train = psutil.virtual_memory().percent - diff_train
 
         # Evaluate Model
+        diff_eval = psutil.virtual_memory().percent
         epoch_evaluation_results = evaluate_epoch(model, device, validation_dataloader, training_params, metrics)
-        
+        diff_eval= psutil.virtual_memory().percent - diff_eval
+
+        diff_metric = psutil.virtual_memory().percent
         for metric in metrics:
             np.append(train_results[metric], epoch_train_results[metric])
             np.append(evaluation_results[metric], epoch_evaluation_results[metric])
-            
+        diff_metric= psutil.virtual_memory().percent - diff_metric
+        
         
         # Print results of epoch
         print(f"Completed Epoch {epoch+1}/{NUM_EPOCHS} in {(time.time() - start):.2f}s")
         print(f"Train Loss: {epoch_train_results['loss']:.2f} \t Validation Loss: {epoch_evaluation_results['loss']:.2f}")
         
+        diff_plot = psutil.virtual_memory().percent
         # Plot results
         if epoch % PLOT_EVERY == 0:
             save_plots(FIXED_SAMPLES, FIXED_NOISE, model, device, epoch, training_params)
+        diff_plot = psutil.virtual_memory().percent - diff_plot
+        
         
         print(f"Items cleaned up: {gc.collect()}")
-    
+
+        print(f"Memory used in Training: {diff_train:.2f}%")
+        print(f"Memory used in Evaluation: {diff_eval:.2f}%")
+        print(f"Memory used in Metrics: {diff_metric:.2f}%")
+        print(f"Memory used in Plotting: {diff_plot:.2f}%")
         # Save model
         if epoch % SAVE_EVERY == 0 and epoch != 0:
             SAVE = f"{SAVE_PATH}_epoch{epoch + 1}.pt"
