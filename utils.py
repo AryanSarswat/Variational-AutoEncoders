@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import DataLoader
 import time
 import gc
 import numpy as np
@@ -8,6 +8,12 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 def modelSummary(model, verbose=False):
+    """Method provides a description of a model and its parameters
+
+    Args:
+        model (nn.Module): The model to summarize
+        verbose (bool, optional): Describes the model with specification for each layers. Defaults to False.
+    """
     if verbose:
         print(model)
     
@@ -27,7 +33,7 @@ def modelSummary(model, verbose=False):
         print(f"Total number of parameters: {total_parameters/1e3:.2f}K") 
 
 def train_epoch(model: nn.Module, device: torch.device, train_dataloader: DataLoader, training_params: dict, metrics: dict):
-    """_summary_
+    """Method to train a model for one epoch
 
     Args:
         model (nn.Module): Model to be trained by
@@ -89,7 +95,7 @@ def train_epoch(model: nn.Module, device: torch.device, train_dataloader: DataLo
 
 
 def evaluate_epoch(model: nn.Module, device: torch.device, validation_dataloader: DataLoader, training_params: dict, metrics: dict):
-    """_summary_
+    """Method to evaluate a model for one epoch
 
     Args:
         model (nn.Module): model to evaluate
@@ -147,7 +153,7 @@ def evaluate_epoch(model: nn.Module, device: torch.device, validation_dataloader
         
     return run_results
 
-def train_evaluate(model: nn.Module, device: torch.device, train_dataset: Dataset, validation_dataset: Dataset, training_params: dict, metrics: dict):
+def train_evaluate(model: nn.Module, device: torch.device, train_dataloader: DataLoader, validation_dataloader: DataLoader, training_params: dict, metrics: dict):
     """Function to train a model and provide statistics during training
 
     Args:
@@ -167,6 +173,7 @@ def train_evaluate(model: nn.Module, device: torch.device, train_dataset: Datase
     SAVE_PATH = training_params["save_path"]
     SAMPLE_SIZE = training_params["sample_size"]
     PLOT_EVERY = training_params["plot_every"]
+    SAVE_EVERY = training_params["save_every"]
     LATENT_DIMS = training_params["latent_dims"]
     
     # Initialize metrics
@@ -176,12 +183,8 @@ def train_evaluate(model: nn.Module, device: torch.device, train_dataset: Datase
     evaluation_results['loss'] = np.empty(1)
     
     for metric in metrics:
-        train_results[metric] = []
-        evaluation_results[metric] = []
-    
-    # Create Dataloaders
-    train_dataloader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
-    validation_dataloader = DataLoader(validation_dataset, batch_size=BATCH_SIZE, shuffle=True)
+        train_results[metric] = np.empty(1)
+        evaluation_results[metric] = np.empty(1)
     
     batch = next(iter(validation_dataloader))
     idxs = []
@@ -189,9 +192,9 @@ def train_evaluate(model: nn.Module, device: torch.device, train_dataset: Datase
         idx = torch.where(batch[1] == i)[0].squeeze()[0]
         idxs.append(idx.item())
     
-    FIXED_SAMPLES = batch[0][idxs].to(device)
+    FIXED_SAMPLES = batch[0][idxs].to(device).detach()
    
-    FIXED_NOISE = torch.normal(0, 1, size = (100, LATENT_DIMS)).to(device)
+    FIXED_NOISE = torch.normal(0, 1, size = (100, LATENT_DIMS), device=device).detach()
     
     del idxs
     del batch
@@ -221,51 +224,69 @@ def train_evaluate(model: nn.Module, device: torch.device, train_dataset: Datase
         
         # Plot results
         if epoch % PLOT_EVERY == 0:
-            
-            model.eval()
-            
-            outputs = model(FIXED_SAMPLES).detach().cpu()
-            generated_images = model.decoder(FIXED_NOISE).detach().cpu()
-            
-            fig, ax = plt.subplots(2, SAMPLE_SIZE, figsize=(SAMPLE_SIZE * 5,15))
-            for i in range(SAMPLE_SIZE):
-                image = FIXED_SAMPLES[i].detach().cpu()
-                output = outputs[i]
-                
-                ax[0][i].imshow(image.reshape(28,28))
-                ax[1][i].imshow(output.reshape(28,28))
-            
-            plt.savefig(f"{SAVE_PATH}/training_images/epoch{epoch + 1}.png")
-            plt.close()
-            
-            del fig, ax
-            del outputs
-            
-            _, axs = plt.subplots(10, 10, figsize=(30, 20))
-            axs = axs.flatten()
-            
-            for img, ax in zip(generated_images, axs):
-                ax.imshow(img.reshape(28, 28))
-                ax.axis('off')
-                
-            
-            
-            plt.savefig(f"{SAVE_PATH}/generated_images/epoch{epoch + 1}.png")
-            plt.close()
-            
-            # Clean up memory
-            del generated_images
-            del img
-            del _, axs
+            save_plots(FIXED_SAMPLES, FIXED_NOISE, model, epoch, training_params)
         
-        gc.collect()
+        print(f"Items cleaned up: {gc.collect()}")
     
-    
-    # Save model
-    SAVE = f"{SAVE_PATH}_epoch{epoch + 1}.pt"
-    torch.save(model.state_dict(), SAVE)
+        # Save model
+        if epoch % SAVE_EVERY == 0 and epoch != 0:
+            SAVE = f"{SAVE_PATH}_epoch{epoch + 1}.pt"
+            torch.save(model.state_dict(), SAVE)
            
     return train_results, evaluation_results
+
+def save_plots(fixed_samples, fixed_noise, model, device, epoch, training_params):
+    """Function to save plots of the model
+
+    Args:
+        fixed_samples (torch.Tensor): Samples to be plotted
+        fixed_noise (torch.Tensor): Noise to be plotted
+        model (nn.Module): Model to be tested
+        epoch (int): Epoch number
+        SAVE_PATH (str): Path to save plots
+    """
+    SAMPLE_SIZE = training_params["sample_size"]
+    SAVE_PATH = training_params["save_path"]
+    model = model.to(device)
+    
+    with torch.no_grad():
+        model.eval()
+        
+        fixed_samples = fixed_samples.to(device)
+        fixed_noise = fixed_noise.to(device)
+        
+        outputs = model(fixed_samples)
+        generated_images = model.decoder(fixed_noise)
+        
+        fig, ax = plt.subplots(2, SAMPLE_SIZE, figsize=(SAMPLE_SIZE * 5,15))
+        for i in range(SAMPLE_SIZE):
+            image = fixed_samples[i].detach().cpu().numpy()
+            output = outputs[i].detach().cpu().numpy()
+            
+            ax[0][i].imshow(image.reshape(28,28))
+            ax[1][i].imshow(output.reshape(28,28))
+            
+        plt.savefig(f"{SAVE_PATH}/training_images/epoch{epoch + 1}.png")
+        plt.close()
+        
+        del fig, ax
+        del output
+        del outputs
+        
+        _, axs = plt.subplots(10, 10, figsize=(30, 20))
+        axs = axs.flatten()
+        
+        for image, ax in zip(generated_images, axs):
+            ax.imshow(image.cpu().numpy().reshape(28, 28))
+            ax.axis('off')
+            
+        plt.savefig(f"{SAVE_PATH}/generated_images/epoch{epoch + 1}.png")
+        plt.close()
+        
+        # Clean up memory
+        del generated_images
+        del image
+        del _, axs
 
 def plot_training_results(train_results, validation_results, training_params, metrics):
     """Function to plot training results

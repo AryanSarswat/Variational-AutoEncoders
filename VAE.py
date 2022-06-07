@@ -2,8 +2,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torchvision
+from torch.utils.data import DataLoader
 from utils import modelSummary, train_evaluate, plot_training_results
-
+import os
 
 class Encoder(nn.Module):
     def __init__(self, latent_dims) -> None:
@@ -25,8 +26,8 @@ class Encoder(nn.Module):
         self.sigma = nn.Linear(1024, latent_dims)
         
         self.N = torch.distributions.Normal(0, 1)
-        self.N.loc = self.N.loc.cuda()
-        self.N.scale = self.N.scale.cuda()
+        self.N.loc = self.N.loc
+        self.N.scale = self.N.scale
         
         self.kl = 0
         
@@ -92,35 +93,50 @@ class VariationalAutoEncoder(nn.Module):
 
 if __name__ == '__main__':
     
-    # Initialize Model
     latent_dims = 256
+    learning_rate = 1e-4
+    
     model = VariationalAutoEncoder(latent_dims)
-    
+
     modelSummary(model)
-    
+
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}\n")
-    
-    # Load Data
-    train_dataset = torchvision.datasets.MNIST(root = './data', train = True, download = True, transform = torchvision.transforms.ToTensor())
-    validation_dataset = torchvision.datasets.MNIST(root = './data', train = False, download = True, transform = torchvision.transforms.ToTensor())
-    
-        
+
     training_params = {
         'num_epochs': 200,
         'batch_size': 512,
         'loss_function':F.mse_loss,
-        'optimizer': torch.optim.Adam(model.parameters(), lr=1e-4),
+        'optimizer': torch.optim.Adam(model.parameters(), lr=learning_rate),
         'save_path': 'training_256',
         'sample_size': 10,
         'plot_every': 1,
         'latent_dims' : latent_dims
     }
-    
+
+    # Create directory if it doesn't exist
+    try:
+        os.mkdir(training_params['save_path'])
+        os.mkdir(os.path.join(training_params['save_path'], 'training_images'))
+        os.mkdir(os.path.join(training_params['save_path'], 'generated_images'))
+    except FileExistsError:
+        pass
+
+    # Load Data
+    train_dataset = DataLoader(torchvision.datasets.MNIST(root = './data', train = True, 
+                                                        download = True, transform = torchvision.transforms.ToTensor()), 
+                                                        batch_size = training_params['batch_size'], shuffle=True, 
+                                                        num_workers=4, pin_memory=True)
+
+    validation_dataset = DataLoader(torchvision.datasets.MNIST(root = './data', train = False, 
+                                                            download = True, transform = torchvision.transforms.ToTensor()),
+                                                            batch_size = training_params['batch_size'], shuffle=False, 
+                                                            num_workers=4, pin_memory=True)
+
     metrics = {
         'l1': lambda output, target: (torch.abs(output - target).sum())
     }
-    
+
     train_results, evaluation_results = train_evaluate(model, device, train_dataset, validation_dataset, training_params, metrics)
     plot_training_results(train_results=train_results, validation_results=evaluation_results, training_params=training_params, metrics=metrics)
     
